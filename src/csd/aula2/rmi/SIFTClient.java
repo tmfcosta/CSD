@@ -23,36 +23,40 @@ public class SIFTClient {
 		myDirectories = allPath.split(",");
 	}
 
-	private void uploadFile(File f, String directory) throws RemoteException, Exception {
-		server.put(directory, f, userID);
-	}
+	/*
+	 * private void uploadFile(File f, String directory) throws RemoteException,
+	 * Exception { server.put(directory, f, userID); }
+	 * 
+	 * private void downloadFile(String directory, File f) throws IOException {
+	 * File file = server.get(directory, f.getName(), userID);
+	 * 
+	 * byte[] data = new byte[(int) file.getTotalSpace()]; BufferedInputStream
+	 * bis = new BufferedInputStream(new FileInputStream(file)); bis.read(data,
+	 * 0, data.length); bis.close();
+	 * 
+	 * File fr = new File(file.getName());
+	 * System.out.println(fr.createNewFile()); FileOutputStream output = new
+	 * FileOutputStream(fr); output.write(data); output.close(); }
+	 * 
+	 * private void deleteFile(String directory, File f) throws RemoteException
+	 * { server.delete(directory, f.getName(), userID); }
+	 */
 
-	private void downloadFile(String directory, File f) throws IOException {
-		File file = server.get(directory, f.getName(), userID);
-
-		byte[] data = new byte[(int) file.getTotalSpace()];
-		BufferedInputStream bis = new BufferedInputStream(new FileInputStream(file));
-		bis.read(data, 0, data.length);
-		bis.close();
-
-		File fr = new File(file.getName());
-		System.out.println(fr.createNewFile());
-		FileOutputStream output = new FileOutputStream(fr);
-		output.write(data);
-		output.close();
-	}
-
-	private void deleteFile(String directory, File f) throws RemoteException {
-		server.delete(directory, f.getName(), userID);
-	}
-
+	/**
+	 * HOW TO USE Use: java csd.aula2.rmi.SIFTClient -u <userdId> -a
+	 * <serverAddress> -s <list of dirs>
+	 * 
+	 */
 	public static void main(String[] args) {
-		// if (args.length != 6 || args[0] != "-u" || args[2] != "-a" || args[4]
-		// != "-s") {
-		// System.out.println("Use: java SIFTClient -u <userId> -a
-		// <serverAddress:port> -s <list of dirs>");
-		// System.exit(0);
-		// }
+		if ((args.length < 6) || (!args[0].equalsIgnoreCase("-u")) || (!args[2].equalsIgnoreCase("-a"))
+				|| (!args[4].equalsIgnoreCase("-s"))) {
+			System.out.println(args.length);
+			System.out.println(args[0]);
+			System.out.println(args[2]);
+			System.out.println(args[4]);
+			System.out.println("Use: java SIFTClient -u <userId> -a <serverAddress:port> -s <list of dirs>");
+			System.exit(0);
+		}
 
 		userID = args[1];
 		String serverHost = args[3];
@@ -66,14 +70,18 @@ public class SIFTClient {
 			System.setProperty("javax.net.ssl.trustStore", "client.ks");
 			System.setProperty("javax.net.ssl.trustStorePassword", "123456");
 
-			server = (IServer) Naming.lookup("//" + serverHost + "/myServer");
+			server = (IServer) Naming.lookup("//" + serverHost + "/siftBoxServer");
 			Timer timer = new Timer();
+
+			// split the directories path
 
 			setMyDirectories();
 			try {
+				// check locally and on server if the directories exists
+				System.out.println("Checking directories");
 				checkDirectories();
+				System.out.println("DONE Setting directories");
 			} catch (RemoteException e1) {
-				// TODO Auto-generated catch block
 				e1.printStackTrace();
 			}
 
@@ -81,7 +89,9 @@ public class SIFTClient {
 				public void run() {
 					// DO THE CHECKINGS OF FILES AND SYNCHRONIZE
 					try {
+						System.out.println("Checking files");
 						checkFiles();
+						System.out.println("DONE Checking files");
 					} catch (Exception e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();
@@ -94,6 +104,11 @@ public class SIFTClient {
 		}
 	}
 
+	/**
+	 * Check to see if it has all the directories passed as arguments
+	 * 
+	 * @throws RemoteException
+	 */
 	private static void checkDirectories() throws RemoteException {
 		for (String a : myDirectories) {
 			server.putDirectory(a, userID);
@@ -104,12 +119,20 @@ public class SIFTClient {
 		}
 	}
 
+	/**
+	 * Checks all files and its modified dates ... This method takes care of the
+	 * synchronization 1- Gets all files from the server side 2- Gets all files
+	 * from the client side 3- Compares the Modified date 4- if local modified
+	 * date > server modified date, upload the file to the server 5- else
+	 * download the file to the client
+	 * 
+	 * @throws Exception
+	 */
 	private static void checkFiles() throws Exception {
 		File[] tempServerSide;
 		File[] tempClientSide;
 		for (String a : myDirectories) {
 			try {
-				System.out.println(a);
 				tempServerSide = server.getAll(a, userID);
 				System.out.println("Server: " + tempServerSide.length);
 				File f = new File(myPath + "/" + a);
@@ -122,7 +145,6 @@ public class SIFTClient {
 					for (int i = 0; i < tempServerSide.length; i++) {
 						boolean found = false;
 						serverFile = tempServerSide[i];
-						System.out.println("AQUI");
 						for (int j = 0; j < tempClientSide.length && !found; j++) {
 							clientFile = tempClientSide[j];
 							if (clientFile.getName().equalsIgnoreCase(serverFile.getName())) {
@@ -135,7 +157,7 @@ public class SIFTClient {
 							}
 						}
 						if (!found) {
-							System.out.println("NOT FOUND");
+							System.out.println("NOT FOUND ON CLIENT");
 							createFileClient(a, serverFile);
 						}
 					}
@@ -155,7 +177,7 @@ public class SIFTClient {
 							}
 						}
 						if (!found) {
-							System.out.println("here");
+							System.out.println("NOT FOUND ON SERVER");
 							server.put(a, clientFile, userID);
 						}
 					}
@@ -167,6 +189,14 @@ public class SIFTClient {
 		}
 	}
 
+	/**
+	 * Called by the checkFiles, when there is a file that exists in the server
+	 * but not on the client
+	 * 
+	 * @param directory
+	 * @param f
+	 * @throws IOException
+	 */
 	private static void createFileClient(String directory, File f) throws IOException {
 		byte[] data = new byte[Math.round(f.length())];
 		BufferedInputStream bis = new BufferedInputStream(new FileInputStream(f));
